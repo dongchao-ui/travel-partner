@@ -77,6 +77,7 @@ class Attraction(BaseModel):
     duration: str
     reason: str
     tips: list[str]
+    map_url: str = ""
     indoor: bool = False
     cost_level: Literal["low", "mid", "high"] = "mid"
     evidence: list[str] = Field(default_factory=list)
@@ -118,10 +119,27 @@ class DayPlan(BaseModel):
     risk_control: list[str]
 
 
+class ToolCallPlan(BaseModel):
+    weather: bool = True
+    attractions: bool = True
+    guide_search: bool = True
+    transport: bool = True
+    budget: bool = True
+    rag: bool = True
+    reasons: list[str] = Field(default_factory=list)
+
+
+class PlanQualityIssue(BaseModel):
+    severity: Literal["pass", "notice", "warning"] = "notice"
+    title: str
+    detail: str
+
+
 class PlanResponse(BaseModel):
     plan_id: str
     summary: str
     request: TravelRequest
+    tool_plan: ToolCallPlan
     weather: WeatherReport
     attractions: list[Attraction]
     guide_insights: list[GuideInsight]
@@ -129,6 +147,7 @@ class PlanResponse(BaseModel):
     itinerary: list[DayPlan]
     budget: BudgetBreakdown
     packing_list: list[str]
+    quality_issues: list[PlanQualityIssue]
     warnings: list[str]
     adjustment_log: list[str]
     markdown: str
@@ -137,6 +156,11 @@ class PlanResponse(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=1000)
+
+
+class AdjustmentRequest(BaseModel):
+    base_request: TravelRequest
+    instruction: str = Field(..., min_length=1, max_length=200)
 
 
 class UploadResponse(BaseModel):

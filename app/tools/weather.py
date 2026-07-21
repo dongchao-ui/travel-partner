@@ -31,15 +31,18 @@ WEATHER_TEXT = {
 }
 
 
-async def get_weather(destination: str, days: int) -> WeatherReport:
+async def get_weather(destination: str, days: int, start_date: date | None = None) -> WeatherReport:
     try:
         async with httpx.AsyncClient(timeout=8) as client:
             location = await geocode(client, destination)
+            forecast_start = start_date or date.today()
+            forecast_end = forecast_start + timedelta(days=max(1, min(days, 10)) - 1)
             params = {
                 "latitude": location["latitude"],
                 "longitude": location["longitude"],
                 "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum",
-                "forecast_days": max(1, min(days, 10)),
+                "start_date": forecast_start.isoformat(),
+                "end_date": forecast_end.isoformat(),
                 "timezone": "Asia/Shanghai",
             }
             response = await client.get("https://api.open-meteo.com/v1/forecast", params=params)
@@ -65,7 +68,7 @@ async def get_weather(destination: str, days: int) -> WeatherReport:
             return WeatherReport(source="Open-Meteo 实时天气", location_name=location["name"], days=weather_days, warnings=build_warnings(weather_days))
     except Exception as error:
         await asyncio.sleep(0)
-        return fallback_weather(destination, days, str(error))
+        return fallback_weather(destination, days, str(error), start_date)
 
 
 async def geocode(client: httpx.AsyncClient, destination: str) -> dict:
@@ -100,8 +103,8 @@ def build_warnings(days: list[WeatherDay]) -> list[str]:
     return warnings
 
 
-def fallback_weather(destination: str, days: int, reason: str) -> WeatherReport:
-    today = date.today()
+def fallback_weather(destination: str, days: int, reason: str, start_date: date | None = None) -> WeatherReport:
+    today = start_date or date.today()
     fallback_days = [
         WeatherDay(
             date=(today + timedelta(days=index)).isoformat(),

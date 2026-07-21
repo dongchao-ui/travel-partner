@@ -450,6 +450,34 @@ button svg,
   box-shadow: var(--shadow);
 }
 
+.quick-adjust {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.quick-adjust strong {
+  display: block;
+  margin-top: 3px;
+}
+
+.quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.quick-actions button {
+  min-height: 38px;
+}
+
 .decision-card.warn {
   border-color: rgba(216, 102, 71, 0.45);
   background: #fff7f3;
@@ -702,6 +730,80 @@ button svg,
   font-weight: 700;
 }
 
+.map-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  color: var(--green);
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.map-link svg {
+  width: 16px;
+  height: 16px;
+}
+
+.tool-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.tool-status span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.tool-status .enabled {
+  color: var(--green);
+  background: var(--soft-green);
+}
+
+.tool-status .disabled {
+  color: var(--muted);
+  background: #f1f3f2;
+}
+
+.quality-list {
+  display: grid;
+  gap: 8px;
+}
+
+.quality-item {
+  border-left: 3px solid var(--gold);
+  padding: 8px 10px;
+  background: #fffaf0;
+}
+
+.quality-item.pass {
+  border-color: var(--green);
+  background: var(--soft-green);
+}
+
+.quality-item.warning {
+  border-color: var(--coral);
+  background: var(--soft-coral);
+}
+
+.quality-item strong {
+  display: block;
+  margin-bottom: 3px;
+}
+
+.quality-item p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
 .postpone-card {
   display: grid;
   gap: 10px;
@@ -915,9 +1017,14 @@ button svg,
   }
 
   .hero-strip,
-  .summary-band {
+  .summary-band,
+  .quick-adjust {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .quick-actions {
+    justify-content: flex-start;
   }
 
   .upload-panel {

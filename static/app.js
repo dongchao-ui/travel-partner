@@ -6,6 +6,7 @@ const uploadBtn = document.querySelector("#uploadBtn");
 const guideFile = document.querySelector("#guideFile");
 const uploadStatus = document.querySelector("#uploadStatus");
 const healthBadge = document.querySelector("#healthBadge");
+let currentPlan = null;
 
 window.addEventListener("DOMContentLoaded", async () => {
   if (window.lucide) window.lucide.createIcons();
@@ -143,6 +144,7 @@ function checkedValues(name) {
 }
 
 function renderPlan(plan) {
+  currentPlan = plan;
   resultEl.className = "result";
   resultEl.innerHTML = `
     <section class="summary-band">
@@ -168,6 +170,7 @@ function renderPlan(plan) {
     </section>
 
     ${renderTravelDecision(plan)}
+    ${renderQuickAdjust()}
 
     <section class="module-board">
       <div class="module-tabs" role="tablist" aria-label="方案模块">
@@ -187,7 +190,37 @@ function renderPlan(plan) {
     </section>
   `;
   bindModuleTabs();
+  bindQuickAdjustButtons();
   if (window.lucide) window.lucide.createIcons();
+}
+
+function renderQuickAdjust() {
+  return `
+    <section class="quick-adjust">
+      <div>
+        <p class="eyebrow">二次微调</p>
+        <strong>基于当前方案快速重排</strong>
+      </div>
+      <div class="quick-actions">
+        <button class="secondary" type="button" data-adjust="降低预算"><i data-lucide="wallet"></i>降低预算</button>
+        <button class="secondary" type="button" data-adjust="少走路"><i data-lucide="footprints"></i>少走路</button>
+        <button class="secondary" type="button" data-adjust="增加美食"><i data-lucide="utensils"></i>增加美食</button>
+        <button class="secondary" type="button" data-adjust="雨天优先室内"><i data-lucide="umbrella"></i>雨天室内</button>
+      </div>
+    </section>
+  `;
+}
+
+function bindQuickAdjustButtons() {
+  document.querySelectorAll("[data-adjust]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      if (!currentPlan) return;
+      await generatePlan("/api/adjust-plan", {
+        base_request: currentPlan.request,
+        instruction: button.dataset.adjust,
+      });
+    });
+  });
 }
 
 function bindModuleTabs() {
@@ -314,11 +347,48 @@ function renderNotesModule(plan) {
     </div>
     <div class="notes-layout">
       ${renderBudget(plan.budget)}
+      ${renderToolPlan(plan.tool_plan)}
+      ${renderQualityIssues(plan.quality_issues)}
       ${renderList("行李清单", "backpack", plan.packing_list)}
       ${renderInsights(plan.guide_insights)}
       ${renderList("风险边界", "shield-alert", plan.warnings)}
     </div>
   `;
+}
+
+function renderToolPlan(toolPlan) {
+  if (!toolPlan) return "";
+  const tools = [
+    ["天气", toolPlan.weather],
+    ["景点", toolPlan.attractions],
+    ["攻略", toolPlan.guide_search],
+    ["交通", toolPlan.transport],
+    ["预算", toolPlan.budget],
+    ["私有 RAG", toolPlan.rag],
+  ];
+  return panel(
+    "Agent 工具路由",
+    "workflow",
+    `<div class="tool-status">${tools
+      .map(([name, enabled]) => `<span class="${enabled ? "enabled" : "disabled"}">${enabled ? "调用" : "跳过"} ${name}</span>`)
+      .join("")}</div><ul>${toolPlan.reasons.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`,
+  );
+}
+
+function renderQualityIssues(issues = []) {
+  return panel(
+    "方案自检",
+    "badge-check",
+    `<div class="quality-list">${issues
+      .map(
+        (item) => `
+        <div class="quality-item ${escapeHtml(item.severity)}">
+          <strong>${escapeHtml(item.title)}</strong>
+          <p>${escapeHtml(item.detail)}</p>
+        </div>`,
+      )
+      .join("")}</div>`,
+  );
 }
 
 function renderAttractionModule(attractions) {
@@ -338,6 +408,7 @@ function renderAttractionModule(attractions) {
             <p class="attraction-location"><i data-lucide="map-pin"></i><span>${escapeHtml(item.area)}</span></p>
             <p>${escapeHtml(item.price)}｜${escapeHtml(item.open_time)}｜${escapeHtml(item.duration)}</p>
             <small>${escapeHtml(item.tips.slice(0, 2).join("；"))}</small>
+            ${item.map_url ? `<a class="map-link" href="${escapeHtml(item.map_url)}" target="_blank" rel="noreferrer"><i data-lucide="navigation"></i>打开地图</a>` : ""}
           </article>`,
         )
         .join("")}

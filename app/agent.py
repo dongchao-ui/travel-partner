@@ -6,7 +6,7 @@ from datetime import date, timedelta
 
 import httpx
 
-from app.schemas import DayPlan, PlanResponse, TimeSlot, TravelRequest
+from app.schemas import DayPlan, PlanQualityIssue, PlanResponse, TimeSlot, ToolCallPlan, TravelRequest
 from app.storage import update_memory, write_export
 from app.tools.attractions import find_attractions
 from app.tools.budget import build_packing_list, calculate_budget
@@ -17,14 +17,16 @@ from app.tools.weather import get_weather
 
 GROUP_LABEL = {"solo": "单人", "couple": "情侣", "friends": "朋友/同学", "family": "家庭"}
 MODE_LABEL = {"student": "学生穷游", "value": "性价比", "comfort": "轻奢舒适"}
+PLACEHOLDER_SLOT_TITLES = {"自由探索", "轻量自由探索", "附近餐饮/休息", "夜间餐饮机动"}
 
 
 async def build_travel_plan(request: TravelRequest) -> PlanResponse:
     normalized_request = normalize_request(request)
-    weather = await get_weather(normalized_request.destination, normalized_request.days)
+    tool_plan = decide_tool_usage(normalized_request)
+    weather = await get_weather(normalized_request.destination, normalized_request.days, normalized_request.start_date)
     attractions = await find_attractions(normalized_request)
     guide_insights = collect_guide_insights(normalized_request)
-    transport_options = plan_transport(normalized_request)
+    transport_options = plan_transport(normalized_request) if tool_plan.transport else []
     budget, budget_log = calculate_budget(normalized_request)
     travel_decision = build_travel_decision(weather)
 
@@ -36,6 +38,8 @@ async def build_travel_plan(request: TravelRequest) -> PlanResponse:
         itinerary_log = [travel_decision["detail"]]
     else:
         itinerary, itinerary_log = build_itinerary(normalized_request, weather, attractions, budget)
+    quality_issues = validate_plan(normalized_request, weather, attractions, itinerary, budget, travel_decision)
+    quality_log = [f"方案自检：{item.title} - {item.detail}" for item in quality_issues]
 
     warnings = [
         *weather.warnings,
@@ -57,8 +61,10 @@ async def build_travel_plan(request: TravelRequest) -> PlanResponse:
         budget,
         packing_list,
         warnings,
-        [*budget_log, *itinerary_log],
+        [*budget_log, *itinerary_log, *quality_log],
         travel_decision,
+        tool_plan,
+        quality_issues,
     )
     markdown = await maybe_polish_with_deepseek(markdown)
     plan_id = uuid.uuid4().hex[:12]
@@ -78,6 +84,7 @@ async def build_travel_plan(request: TravelRequest) -> PlanResponse:
         plan_id=plan_id,
         summary=summary,
         request=normalized_request,
+        tool_plan=tool_plan,
         weather=weather,
         attractions=attractions,
         guide_insights=guide_insights,
@@ -85,8 +92,9 @@ async def build_travel_plan(request: TravelRequest) -> PlanResponse:
         itinerary=itinerary,
         budget=budget,
         packing_list=packing_list,
+        quality_issues=quality_issues,
         warnings=warnings,
-        adjustment_log=[*budget_log, *itinerary_log],
+        adjustment_log=[*budget_log, *itinerary_log, *quality_log],
         markdown=markdown,
         export_url=export_url,
     )
@@ -100,6 +108,54 @@ def normalize_request(request: TravelRequest) -> TravelRequest:
     if not request.interests:
         request.interests = ["城市逛吃", "小众打卡"]
     return request
+
+
+def apply_adjustment(request: TravelRequest, instruction: str) -> TravelRequest:
+    adjusted = request.model_copy(deep=True)
+    text = instruction.strip()
+    if any(token in text for token in ["降低预算", "省钱", "穷游", "便宜"]):
+        adjusted.budget_mode = "student"
+        adjusted.budget_total = max(300, round(adjusted.budget_total * 0.85))
+    if any(token in text for token in ["少走路", "缩短步行", "轻松"]):
+        if "少走路" not in adjusted.constraints:
+            adjusted.constraints.append("少走路")
+        adjusted.pace = "relaxed"
+    if any(token in text for token in ["增加美食", "多加美食", "夜市", "逛吃"]):
+        for interest in ["城市逛吃", "夜市美食"]:
+            if interest not in adjusted.interests:
+                adjusted.interests.append(interest)
+    if any(token in text for token in ["室内", "下雨", "雨天"]):
+        if "雨天优先室内" not in adjusted.constraints:
+            adjusted.constraints.append("雨天优先室内")
+        for interest in ["博物馆", "城市逛吃"]:
+            if interest not in adjusted.interests:
+                adjusted.interests.append(interest)
+    adjusted.private_notes = f"{adjusted.private_notes}\n二次微调：{text}".strip()
+    return adjusted
+
+
+def decide_tool_usage(request: TravelRequest) -> ToolCallPlan:
+    reasons = ["天气、景点和预算是完整旅行规划的基础工具。"]
+    same_city = request.origin and request.origin == request.destination
+    transport = not same_city
+    if same_city:
+        reasons.append("出发地与目的地一致，弱化城际交通工具，重点使用市内交通建议。")
+    else:
+        reasons.append("存在跨城出行，需要生成城际交通候选方案。")
+    rag = bool(request.use_private_knowledge)
+    if rag:
+        reasons.append("用户开启私有攻略，将检索本地 RAG 资料辅助生成。")
+    else:
+        reasons.append("用户未开启私有攻略，仅使用公开规则和内置候选库。")
+    return ToolCallPlan(
+        weather=True,
+        attractions=True,
+        guide_search=True,
+        transport=transport,
+        budget=True,
+        rag=rag,
+        reasons=reasons,
+    )
 
 
 def build_travel_decision(weather) -> dict:
@@ -128,6 +184,108 @@ def build_travel_decision(weather) -> dict:
     }
 
 
+def validate_plan(request: TravelRequest, weather, attractions, itinerary, budget, travel_decision) -> list[PlanQualityIssue]:
+    issues: list[PlanQualityIssue] = []
+    attraction_by_name = {item.name: item for item in attractions}
+
+    if travel_decision["should_postpone"]:
+        return [
+            PlanQualityIssue(
+                severity="notice",
+                title="已触发改期判断",
+                detail="天气风险较高，本次不强行生成每日行程，避免给出不可落地方案。",
+            )
+        ]
+
+    if not itinerary:
+        return [
+            PlanQualityIssue(
+                severity="warning",
+                title="缺少每日行程",
+                detail="系统没有生成分天安排，需要检查景点候选或天气分支。",
+            )
+        ]
+
+    for day in itinerary:
+        titles = [slot.title for slot in day.slots if slot.title and slot.title not in PLACEHOLDER_SLOT_TITLES]
+        if len(titles) != len(set(titles)):
+            issues.append(
+                PlanQualityIssue(
+                    severity="warning",
+                    title=f"Day {day.day} 存在重复景点",
+                    detail="同一天上午、下午、晚上出现重复点位，建议重新选择时段景点。",
+                )
+            )
+        weather_day = weather.days[(day.day - 1) % len(weather.days)]
+        rainy = weather_day.precipitation_mm >= 3 or "雨" in weather_day.text
+        if rainy:
+            outdoor_slots = [title for title in titles if title in attraction_by_name and not attraction_by_name[title].indoor]
+            if outdoor_slots:
+                issues.append(
+                    PlanQualityIssue(
+                        severity="notice",
+                        title=f"Day {day.day} 雨天含室外点位",
+                        detail=f"{'、'.join(outdoor_slots[:3])} 可能受降雨影响，建议保留室内备选。",
+                    )
+                )
+        if len(day.slots) < 3:
+            issues.append(
+                PlanQualityIssue(
+                    severity="notice",
+                    title=f"Day {day.day} 行程密度偏低",
+                    detail="当天少于 3 个时段安排，可根据体力补充轻量餐饮或休息点。",
+                )
+            )
+
+    trip_counts: dict[str, int] = {}
+    for day in itinerary:
+        for slot in day.slots:
+            if slot.title and slot.title not in PLACEHOLDER_SLOT_TITLES:
+                trip_counts[slot.title] = trip_counts.get(slot.title, 0) + 1
+    repeated_trip_places = [name for name, count in trip_counts.items() if count > 1]
+    if repeated_trip_places:
+        issues.append(
+            PlanQualityIssue(
+                severity="notice",
+                title="全程存在重复景点",
+                detail=f"{'、'.join(repeated_trip_places[:3])} 在多天行程中重复出现，建议优先替换为未安排点位。",
+            )
+        )
+
+    vague_places = [
+        item.name
+        for item in attractions
+        if "待核实" in item.area or "市内" in item.area or "待确认" in item.area
+    ]
+    if vague_places:
+        issues.append(
+            PlanQualityIssue(
+                severity="notice",
+                title="部分景点位置仍需核实",
+                detail=f"{'、'.join(vague_places[:3])} 的位置来自兜底检索，出发前需要用地图确认入口。",
+            )
+        )
+
+    if budget.total > request.budget_total:
+        issues.append(
+            PlanQualityIssue(
+                severity="warning",
+                title="预算超过用户输入",
+                detail=f"当前合计 {budget.total} 元，高于用户预算 {request.budget_total} 元，需要降级食宿或门票。",
+            )
+        )
+
+    if not issues:
+        issues.append(
+            PlanQualityIssue(
+                severity="pass",
+                title="方案自检通过",
+                detail="未发现重复景点、空行程、明显预算超限等基础问题。",
+            )
+        )
+    return issues
+
+
 def build_itinerary(request: TravelRequest, weather, attractions, budget) -> tuple[list[DayPlan], list[str]]:
     logs = []
     plans: list[DayPlan] = []
@@ -136,6 +294,7 @@ def build_itinerary(request: TravelRequest, weather, attractions, budget) -> tup
     indoor_pool = [item for item in attractions if item.indoor]
     outdoor_pool = [item for item in attractions if not item.indoor]
     all_pool = attractions[:]
+    usage_counts: dict[str, int] = {}
 
     for index in range(request.days):
         weather_day = weather.days[index % len(weather.days)]
@@ -143,9 +302,9 @@ def build_itinerary(request: TravelRequest, weather, attractions, budget) -> tup
         rainy = weather_day.precipitation_mm >= 3 or "雨" in weather_day.text
         primary_pool = indoor_pool if rainy and indoor_pool else outdoor_pool or all_pool
         used_names: set[str] = set()
-        morning = choose_distinct_place(primary_pool, index, used_names)
-        afternoon = choose_distinct_place(all_pool, index + 2, used_names)
-        evening = choose_evening(attractions, index, used_names)
+        morning = choose_distinct_place(primary_pool, index, used_names, usage_counts)
+        afternoon = choose_distinct_place(all_pool, index + 2, used_names, usage_counts)
+        evening = choose_evening(attractions, index, used_names, usage_counts)
 
         slots = [
             make_slot("上午", morning, "抵达或从住宿地出发，先安排体力消耗适中的核心点位。", weather_day.advice),
@@ -172,7 +331,12 @@ def build_itinerary(request: TravelRequest, weather, attractions, budget) -> tup
 
 def make_slot(time_label: str, attraction, fallback: str, weather_hint: str) -> TimeSlot:
     if not attraction:
-        return TimeSlot(time=time_label, title="自由探索", detail=fallback, cost="按实际消费", weather_hint=weather_hint)
+        fallback_titles = {
+            "上午": "轻量自由探索",
+            "下午": "附近餐饮/休息",
+            "晚上": "夜间餐饮机动",
+        }
+        return TimeSlot(time=time_label, title=fallback_titles.get(time_label, "自由探索"), detail=fallback, cost="按实际消费", weather_hint=weather_hint)
     return TimeSlot(
         time=time_label,
         title=attraction.name,
@@ -182,23 +346,30 @@ def make_slot(time_label: str, attraction, fallback: str, weather_hint: str) -> 
     )
 
 
-def choose_distinct_place(places, index: int, used_names: set[str]):
+def choose_distinct_place(places, index: int, used_names: set[str], usage_counts: dict[str, int]):
     if not places:
+        return None
+    candidates = [place for place in places if place.name not in used_names and usage_counts.get(place.name, 0) == 0]
+    if not candidates:
         return None
     for offset in range(len(places)):
         place = places[(index + offset) % len(places)]
-        if place.name not in used_names:
+        if place in candidates:
             used_names.add(place.name)
+            usage_counts[place.name] = usage_counts.get(place.name, 0) + 1
             return place
-    return None
+    place = candidates[0]
+    used_names.add(place.name)
+    usage_counts[place.name] = usage_counts.get(place.name, 0) + 1
+    return place
 
 
-def choose_evening(attractions, index: int, used_names: set[str]):
+def choose_evening(attractions, index: int, used_names: set[str], usage_counts: dict[str, int]):
     evening_candidates = [item for item in attractions if any(token in item.category for token in ["夜", "小吃", "逛吃", "街区"])]
-    place = choose_distinct_place(evening_candidates, index, used_names)
+    place = choose_distinct_place(evening_candidates, index, used_names, usage_counts)
     if place:
         return place
-    return choose_distinct_place(attractions, index + 3, used_names)
+    return choose_distinct_place(attractions, index + 3, used_names, usage_counts)
 
 
 def build_day_theme(index: int, request: TravelRequest, rainy: bool) -> str:
@@ -244,7 +415,7 @@ def build_summary(request: TravelRequest, total_budget: int) -> str:
     )
 
 
-def render_markdown(request, summary, weather, attractions, insights, transport, itinerary, budget, packing, warnings, adjustment_log, travel_decision) -> str:
+def render_markdown(request, summary, weather, attractions, insights, transport, itinerary, budget, packing, warnings, adjustment_log, travel_decision, tool_plan, quality_issues) -> str:
     lines = [
         f"# 旅行伙计攻略：{request.origin} -> {request.destination}",
         "",
@@ -266,6 +437,11 @@ def render_markdown(request, summary, weather, attractions, insights, transport,
     lines.extend(["", "## 交通方案"])
     for option in transport:
         lines.append(f"- {option.name}：{option.total_time}，{option.estimated_cost}。适合：{option.best_for}。注意：{option.caution}")
+    if not transport:
+        lines.append("- 本次判断为同城或近距离规划，未生成城际交通方案，优先使用市内公共交通/短途打车。")
+    lines.extend(["", "## Agent 工具调用计划"])
+    for reason in tool_plan.reasons:
+        lines.append(f"- {reason}")
     lines.extend(["", "## 分天行程"])
     if itinerary:
         for day in itinerary:
@@ -279,7 +455,10 @@ def render_markdown(request, summary, weather, attractions, insights, transport,
         lines.append(f"- {travel_decision['detail']}")
     lines.extend(["", "## 候选景点"])
     for item in attractions:
-        lines.append(f"- {item.name}｜{item.category}｜{item.area}｜{item.price}｜{item.open_time}")
+        lines.append(f"- {item.name}｜{item.category}｜{item.area}｜{item.price}｜{item.open_time}｜地图：{item.map_url}")
+    lines.extend(["", "## 方案自检"])
+    for issue in quality_issues:
+        lines.append(f"- {issue.severity}｜{issue.title}：{issue.detail}")
     lines.extend(["", "## 攻略清洗结论"])
     for insight in insights:
         lines.append(f"- {insight.title}：{insight.content}（{insight.source}，可信度 {insight.confidence}）")

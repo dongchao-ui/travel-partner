@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import quote_plus
+
 import httpx
 
 from app.schemas import Attraction, TravelRequest
@@ -146,6 +148,9 @@ def score_place(place: dict, request: TravelRequest) -> int:
 def normalize_place(place: dict, request: TravelRequest, evidence: list[str]) -> Attraction:
     category = place.get("category", "景点")
     cost_level = "low" if "免费" in place.get("price", "") else "mid"
+    name = place.get("name", "候选景点")
+    area = place.get("area", "待确认片区")
+    map_query = quote_plus(f"{request.destination} {name} {area}")
     tips = [
         "出发前确认预约、开放时间和临时闭馆信息。",
         "同片区串联游玩，减少跨区往返。",
@@ -155,14 +160,15 @@ def normalize_place(place: dict, request: TravelRequest, evidence: list[str]) ->
     if request.budget_mode == "student":
         tips.append("优先选择免费开放时段，把预算留给餐饮和交通。")
     return Attraction(
-        name=place.get("name", "候选景点"),
+        name=name,
         category=category,
-        area=place.get("area", "待确认片区"),
+        area=area,
         price=place.get("price", "待核实"),
         open_time=place.get("open_time", "待核实"),
         duration=place.get("duration", "1-2 小时"),
         reason=f"匹配你的偏好：{', '.join(request.interests) or '轻松旅行'}；适合放入 {request.days} 天游玩节奏。",
         tips=tips,
+        map_url=f"https://uri.amap.com/search?keyword={map_query}",
         indoor=bool(place.get("indoor")),
         cost_level=cost_level,
         evidence=evidence[:2],

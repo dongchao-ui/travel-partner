@@ -9,9 +9,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.agent import build_travel_plan
+from app.agent import apply_adjustment, build_travel_plan
 from app.chat_parser import parse_chat_message
-from app.schemas import ChatRequest, PlanResponse, TravelRequest, UploadResponse
+from app.schemas import AdjustmentRequest, ChatRequest, PlanResponse, TravelRequest, UploadResponse
 from app.storage import EXPORT_DIR, ROOT, ingest_file, read_memory
 
 load_dotenv(ROOT / ".env", override=True)
@@ -57,6 +57,12 @@ async def plan(request: TravelRequest) -> PlanResponse:
 async def chat_plan(request: ChatRequest) -> PlanResponse:
     parsed = parse_chat_message(request.message)
     return await build_travel_plan(parsed)
+
+
+@app.post("/api/adjust-plan", response_model=PlanResponse)
+async def adjust_plan(request: AdjustmentRequest) -> PlanResponse:
+    adjusted = apply_adjustment(request.base_request, request.instruction)
+    return await build_travel_plan(adjusted)
 
 
 @app.post("/api/upload", response_model=UploadResponse)
