@@ -177,6 +177,7 @@ function renderPlan(plan) {
         <button class="module-tab active" type="button" data-module="weather"><i data-lucide="cloud-sun"></i>天气建议</button>
         <button class="module-tab" type="button" data-module="transport"><i data-lucide="train"></i>交通方案</button>
         <button class="module-tab" type="button" data-module="notes"><i data-lucide="shield-check"></i>注意事项</button>
+        <button class="module-tab" type="button" data-module="cleanup"><i data-lucide="filter"></i>攻略清洗</button>
         <button class="module-tab" type="button" data-module="attractions"><i data-lucide="landmark"></i>景点规划</button>
         <button class="module-tab" type="button" data-module="itinerary"><i data-lucide="calendar-days"></i>每日行程</button>
       </div>
@@ -184,6 +185,7 @@ function renderPlan(plan) {
         <section class="module-panel active" data-panel="weather">${renderWeatherModule(plan)}</section>
         <section class="module-panel" data-panel="transport">${renderTransportModule(plan.transport_options)}</section>
         <section class="module-panel" data-panel="notes">${renderNotesModule(plan)}</section>
+        <section class="module-panel" data-panel="cleanup">${renderCleanupModule(plan.guide_insights)}</section>
         <section class="module-panel" data-panel="attractions">${renderAttractionModule(plan.attractions)}</section>
         <section class="module-panel" data-panel="itinerary">${renderItineraryModule(plan)}</section>
       </div>
@@ -342,18 +344,38 @@ function renderNotesModule(plan) {
     <div class="module-head">
       <div>
         <p class="eyebrow">注意事项</p>
-        <h3>预算、行李、风险和攻略清洗结论</h3>
+        <h3>预算、行李和风险边界</h3>
       </div>
     </div>
-    <div class="notes-layout">
+    <div class="notes-grid">
       ${renderBudget(plan.budget)}
       ${renderToolPlan(plan.tool_plan)}
       ${renderQualityIssues(plan.quality_issues)}
       ${renderList("行李清单", "backpack", plan.packing_list)}
-      ${renderInsights(plan.guide_insights)}
       ${renderList("风险边界", "shield-alert", plan.warnings)}
     </div>
   `;
+}
+
+function renderCleanupModule(items) {
+  const ruleItems = (items || []).filter((item) => !isPrivateInsight(item));
+  const privateItems = (items || []).filter(isPrivateInsight);
+  return `
+    <div class="module-head">
+      <div>
+        <p class="eyebrow">攻略清洗</p>
+        <h3>系统规则和私有 RAG 命中</h3>
+      </div>
+    </div>
+    <div class="cleanup-grid">
+      ${renderCleanupGroup("攻略清洗规则", "filter", ruleItems.length ? `<div class="insight-list rule-list">${ruleItems.map(renderInsightCard).join("")}</div>` : `<div class="empty-state">暂无系统清洗规则结果。</div>`)}
+      ${renderCleanupGroup("私有 RAG 命中", "database", privateItems.length ? `<div class="rag-hit-list">${privateItems.map(renderRagHitCard).join("")}</div>` : `<div class="empty-state">本次没有命中私有攻略；上传或补充目的地攻略后会显示在这里。</div>`)}
+    </div>
+  `;
+}
+
+function renderCleanupGroup(title, icon, content) {
+  return panel(title, icon, content, "cleanup-panel");
 }
 
 function renderToolPlan(toolPlan) {
@@ -496,20 +518,94 @@ function renderTransport(options) {
   );
 }
 
-function renderInsights(items) {
-  return panel(
-    "攻略清洗",
-    "filter",
-    items.map((item) => `<div class="compact"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.content)}</p><small>${escapeHtml(item.source)}｜${item.confidence}</small></div>`).join(""),
-  );
+function isPrivateInsight(item) {
+  return /RAG|私有|知识库/i.test(`${item?.title || ""} ${item?.source || ""}`);
+}
+
+function renderInsightCard(item) {
+  const normalized = normalizeInsight(item);
+  const confidenceText = { high: "高可信", medium: "中可信", low: "低可信" }[item.confidence] || item.confidence;
+  return `
+    <article class="insight-card ${normalized.isPrivate ? "private-rag" : ""}">
+      <div class="insight-card-head">
+        <div>
+          <strong>${escapeHtml(item.title)}</strong>
+          ${normalized.file ? `<span>${escapeHtml(normalized.file)}</span>` : ""}
+        </div>
+        <div class="insight-tags">
+          <em>${escapeHtml(item.source)}</em>
+          <em>${escapeHtml(confidenceText)}</em>
+        </div>
+      </div>
+      <p>${escapeHtml(normalized.summary)}</p>
+      ${normalized.chips.length ? `<div class="insight-chips">${normalized.chips.map((chip) => `<span>${escapeHtml(chip)}</span>`).join("")}</div>` : ""}
+    </article>
+  `;
+}
+
+function renderRagHitCard(item) {
+  const normalized = normalizeInsight(item);
+  const confidenceText = { high: "高可信", medium: "中可信", low: "低可信" }[item.confidence] || item.confidence;
+  return `
+    <article class="rag-hit-card">
+      <header>
+        <div>
+          <span>命中资料</span>
+          <strong>${escapeHtml(normalized.file || item.title)}</strong>
+        </div>
+        <em>${escapeHtml(confidenceText)}</em>
+      </header>
+      <p>${escapeHtml(normalized.summary)}</p>
+      ${normalized.chips.length ? `<div class="insight-chips">${normalized.chips.map((chip) => `<span>${escapeHtml(chip)}</span>`).join("")}</div>` : ""}
+      <small>${escapeHtml(item.source)}</small>
+    </article>
+  `;
+}
+
+function normalizeInsight(item) {
+  const raw = String(item.content || "").replace(/\s+/g, " ").trim();
+  const isPrivate = isPrivateInsight(item);
+  let file = "";
+  let summary = raw;
+
+  if (isPrivate) {
+    const match = raw.match(/^([^：:]{2,40}\.(?:txt|md|pdf|markdown))\s*[：:]\s*(.+)$/i);
+    if (match) {
+      file = match[1];
+      summary = match[2];
+    }
+  }
+
+  const chips = extractInsightChips(summary);
+  summary = shortenText(summary, isPrivate ? 180 : 120);
+  return { isPrivate, file, summary, chips };
+}
+
+function extractInsightChips(text) {
+  const chips = [];
+  const budgetMatches = text.match(/\d+(?:\.\d+)?\s*(?:-|－|~|—)\s*\d+(?:\.\d+)?\s*元|\d+(?:\.\d+)?\s*元/g) || [];
+  budgetMatches.slice(0, 4).forEach((item) => chips.push(item.replace(/\s+/g, "")));
+
+  ["预算", "交通", "住宿", "餐饮", "门票", "高铁", "火车", "室内", "少走路"].forEach((keyword) => {
+    if (text.includes(keyword) && !chips.includes(keyword)) chips.push(keyword);
+  });
+
+  return chips.slice(0, 6);
+}
+
+function shortenText(text, maxLength) {
+  if (text.length <= maxLength) return text;
+  const cut = text.slice(0, maxLength);
+  const lastBreak = Math.max(cut.lastIndexOf("。"), cut.lastIndexOf("；"), cut.lastIndexOf("，"));
+  return `${cut.slice(0, lastBreak > 70 ? lastBreak + 1 : maxLength)}...`;
 }
 
 function renderList(title, icon, items) {
   return panel(title, icon, `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`);
 }
 
-function panel(title, icon, content) {
-  return `<section class="panel"><div class="panel-heading"><i data-lucide="${icon}"></i><h3>${title}</h3></div>${content}</section>`;
+function panel(title, icon, content, className = "") {
+  return `<section class="panel ${className}"><div class="panel-heading"><i data-lucide="${icon}"></i><h3>${title}</h3></div>${content}</section>`;
 }
 
 function metric(icon, label, value) {

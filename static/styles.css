@@ -629,9 +629,59 @@ button svg,
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.notes-layout {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.notes-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
   align-items: start;
+}
+
+.notes-grid .panel {
+  border-top: 2px solid rgba(29, 122, 104, 0.18);
+}
+
+.cleanup-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+  margin-top: 18px;
+}
+
+.cleanup-grid .panel {
+  height: 100%;
+  border-top: 2px solid rgba(56, 111, 164, 0.18);
+}
+
+.cleanup-grid .panel .panel-heading svg {
+  color: var(--blue);
+}
+
+.notes-grid .panel .panel-heading svg {
+  color: var(--green);
+}
+
+.cleanup-grid .panel .insight-list,
+.cleanup-grid .panel .rag-hit-list {
+  grid-template-columns: 1fr;
+}
+
+.cleanup-grid .panel .empty-state {
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+}
+
+.notes-grid .panel .empty-state {
+  min-height: 96px;
+}
+
+.cleanup-grid .panel-heading {
+  margin-bottom: 12px;
+}
+
+.cleanup-grid .panel-heading h3 {
+  font-size: 16px;
 }
 
 .weather-day,
@@ -991,6 +1041,167 @@ button svg,
   font-size: 13px;
 }
 
+.empty-state {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  color: var(--muted);
+  background: #fbfcfb;
+  font-size: 14px;
+}
+
+.insight-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.rule-list {
+  grid-template-columns: 1fr;
+}
+
+.insight-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfcfb;
+}
+
+.insight-card.private-rag {
+  border-color: rgba(29, 122, 104, 0.24);
+  background: linear-gradient(180deg, rgba(29, 122, 104, 0.07), #fbfcfb 75%);
+}
+
+.insight-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.insight-card-head strong,
+.insight-card-head span {
+  display: block;
+}
+
+.insight-card-head strong {
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.insight-card-head span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.insight-tags,
+.insight-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.insight-tags {
+  justify-content: flex-end;
+  min-width: 145px;
+}
+
+.insight-tags em,
+.insight-chips span {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.insight-tags em {
+  border: 1px solid var(--line);
+  padding: 4px 7px;
+  color: var(--muted);
+  background: #fff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.insight-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.insight-chips span {
+  border: 1px solid rgba(29, 122, 104, 0.18);
+  padding: 4px 7px;
+  color: var(--green);
+  background: var(--soft-green);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.rag-hit-list {
+  display: grid;
+  gap: 10px;
+}
+
+.rag-hit-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(29, 122, 104, 0.24);
+  border-radius: 8px;
+  padding: 14px;
+  background: linear-gradient(180deg, rgba(29, 122, 104, 0.08), #fff 72%);
+}
+
+.rag-hit-card header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rag-hit-card header span,
+.rag-hit-card small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.rag-hit-card header strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.rag-hit-card header em {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: var(--green);
+  background: var(--soft-green);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.rag-hit-card p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.rag-hit-card small {
+  display: block;
+}
+
 .panel ul {
   margin: 0;
   padding-left: 19px;
@@ -1055,7 +1266,15 @@ button svg,
   .weather-grid,
   .option-grid,
   .attraction-grid,
-  .notes-layout {
+  .notes-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cleanup-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .insight-list {
     grid-template-columns: 1fr;
   }
 

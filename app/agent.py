@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import uuid
 from datetime import date, timedelta
@@ -23,11 +24,23 @@ PLACEHOLDER_SLOT_TITLES = {"自由探索", "轻量自由探索", "附近餐饮/�
 async def build_travel_plan(request: TravelRequest) -> PlanResponse:
     normalized_request = normalize_request(request)
     tool_plan = decide_tool_usage(normalized_request)
-    weather = await get_weather(normalized_request.destination, normalized_request.days, normalized_request.start_date)
-    attractions = await find_attractions(normalized_request)
-    guide_insights = collect_guide_insights(normalized_request)
-    transport_options = plan_transport(normalized_request) if tool_plan.transport else []
-    budget, budget_log = calculate_budget(normalized_request)
+
+    weather_task = asyncio.create_task(
+        get_weather(normalized_request.destination, normalized_request.days, normalized_request.start_date)
+    )
+    attractions_task = asyncio.create_task(find_attractions(normalized_request))
+    guide_task = asyncio.to_thread(collect_guide_insights, normalized_request)
+    budget_task = asyncio.to_thread(calculate_budget, normalized_request)
+    transport_task = asyncio.to_thread(plan_transport, normalized_request) if tool_plan.transport else None
+
+    weather, attractions, guide_insights, budget_result = await asyncio.gather(
+        weather_task,
+        attractions_task,
+        guide_task,
+        budget_task,
+    )
+    budget, budget_log = budget_result
+    transport_options = await transport_task if transport_task else []
     travel_decision = build_travel_decision(weather)
 
     rainy = any(day.precipitation_mm >= 3 or "雨" in day.text for day in weather.days)
