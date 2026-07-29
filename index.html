@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>旅行伙计 TravelMate Agent</title>
+    <link rel="stylesheet" href="./styles.css?v=6" />
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="workspace">
+        <header class="topbar">
+          <div class="brand">
+            <span class="brand-mark">旅</span>
+            <div>
+              <p>TravelMate Agent</p>
+              <h1>旅行伙计</h1>
+            </div>
+          </div>
+          <div id="healthBadge" class="health">连接中</div>
+        </header>
+
+        <section class="hero-strip">
+          <div class="hero-copy">
+            <p class="eyebrow">AI 多工具旅行规划</p>
+            <h2>把天气、攻略、景点、交通和预算收进一个页面</h2>
+            <p>支持 DeepSeek 润色、本地 RAG、Markdown 导出和二次微调。</p>
+          </div>
+          <div class="hero-tags" aria-label="核心能力">
+            <span><i data-lucide="sparkles"></i>DeepSeek 润色</span>
+            <span><i data-lucide="cloud-sun"></i>实时天气</span>
+            <span><i data-lucide="database"></i>私有 RAG</span>
+            <span><i data-lucide="file-down"></i>Markdown 导出</span>
+          </div>
+        </section>
+
+        <section class="input-band">
+          <form id="planForm" class="planner-form">
+            <div class="field two">
+              <label>出发城市<input name="origin" value="西安" /></label>
+              <label>目的地<input name="destination" value="重庆" required /></label>
+            </div>
+            <div class="field three">
+              <label>出行天数<input name="days" type="number" min="1" max="10" value="3" /></label>
+              <label>同行人数<input name="people" type="number" min="1" max="12" value="2" /></label>
+              <label>总预算<input name="budget_total" type="number" min="300" value="1800" /></label>
+            </div>
+            <div class="field three">
+              <label>出行日期<input name="start_date" type="date" /></label>
+              <label>人群
+                <select name="group">
+                  <option value="friends">朋友/同学</option>
+                  <option value="solo">单人</option>
+                  <option value="couple">情侣</option>
+                  <option value="family">家庭</option>
+                </select>
+              </label>
+              <label>预算模式
+                <select name="budget_mode">
+                  <option value="student">学生穷游</option>
+                  <option value="value" selected>性价比</option>
+                  <option value="comfort">轻奢舒适</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="choice-block">
+              <span>兴趣偏好</span>
+              <div class="chips" data-name="interests">
+                <label><input type="checkbox" value="自然风光" />自然风光</label>
+                <label><input type="checkbox" value="历史古迹" />历史古迹</label>
+                <label><input type="checkbox" value="城市逛吃" checked />城市逛吃</label>
+                <label><input type="checkbox" value="博物馆" />博物馆</label>
+                <label><input type="checkbox" value="小众打卡" checked />小众打卡</label>
+                <label><input type="checkbox" value="夜市美食" checked />夜市美食</label>
+              </div>
+            </div>
+
+            <div class="choice-block">
+              <span>硬性限制</span>
+              <div class="chips" data-name="constraints">
+                <label><input type="checkbox" value="少走路" />少走路</label>
+                <label><input type="checkbox" value="不爱早起" />不爱早起</label>
+                <label><input type="checkbox" value="晕车" />晕车</label>
+                <label><input type="checkbox" value="不吃辣" />不吃辣</label>
+                <label><input type="checkbox" value="宠物同行" />宠物同行</label>
+                <label><input type="checkbox" value="拒绝人挤人" checked />拒绝人挤人</label>
+              </div>
+            </div>
+
+            <label class="wide">补充说明
+              <textarea name="private_notes" rows="3" placeholder="例如：想多吃本地小吃，不想早起，酒店希望靠地铁。"></textarea>
+            </label>
+
+            <div class="actions">
+              <button id="submitBtn" type="submit"><i data-lucide="sparkles"></i>生成旅行方案</button>
+              <button id="sampleBtn" class="secondary" type="button"><i data-lucide="wand-sparkles"></i>示例方案</button>
+            </div>
+          </form>
+
+          <aside class="upload-panel">
+            <div class="panel-title"><i data-lucide="database"></i><strong>私有 RAG 攻略</strong></div>
+            <p>上传 PDF/TXT/MD 收藏攻略，Agent 会在规划时检索你的私有笔记。</p>
+            <input id="guideFile" type="file" accept=".txt,.md,.pdf" />
+            <button id="uploadBtn" class="secondary" type="button"><i data-lucide="upload"></i>上传攻略</button>
+            <div id="uploadStatus" class="small">尚未上传本地攻略。</div>
+          </aside>
+        </section>
+
+        <section id="result" class="result empty">
+          <div class="empty-state">
+            <i data-lucide="map"></i>
+            <h2>输入出行条件后，这里会生成完整可落地攻略。</h2>
+            <p>包含天气、景点、攻略清洗、交通方案、预算、行李清单和 Markdown 导出。</p>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="./app.js?v=6" defer></script>
+  </body>
+</html>
